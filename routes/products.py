@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks
 from typing import List, Optional
 
 from schemas import Product, ProductCreate
 from data.products import products
 from utils.helpers import get_next_id
+from utils.telegram import send_telegram_message
 
 # Создаём роутер для продуктов
 router = APIRouter(
@@ -114,9 +115,9 @@ async def get_product(
     status_code=201,
     summary="Создать новый продукт"
 )
-async def create_product(product_data: ProductCreate):
+async def create_product(product_data: ProductCreate, background_tasks: BackgroundTasks,):
     """
-    Создать новый продукт в каталоге.
+    Создать новый продукт и отправить Telegram-уведомление в фоне.
     
     Body:
         product_data: Данные нового продукта (без ID)
@@ -136,6 +137,18 @@ async def create_product(product_data: ProductCreate):
     
     products.append(new_product)
     
+    message = f"""🆕 *Создан новый продукт*
+📦 Название: {new_product['name']}
+🆔 ID: {new_product['id']}
+📝 Описание: {new_product['description'][:150]}...
+💰 Цены:
+        Шмекели: {new_product['prices'].get('shmeckles', 'N/A')}
+        Кредиты: {new_product['prices'].get('credits', 'N/A')}
+        Флурбо: {new_product['prices'].get('flurbos', 'N/A')}
+        """
+    
+    background_tasks.add_task(send_telegram_message, message)
+
     return new_product
 
 
@@ -148,10 +161,11 @@ async def create_product(product_data: ProductCreate):
 )
 async def update_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
-    product_data: ProductCreate = None
+    product_data: ProductCreate = None,
+    background_tasks: BackgroundTasks = None,
 ):
     """
-    Обновить информацию о существующем продукте.
+    Обновить существующий продукт и отправить Telegram-уведомление в фоне.
     
     Args:
         product_id: ID продукта для обновления
@@ -184,6 +198,18 @@ async def update_product(
     }
     
     products[product_index] = updated_product
+    
+    message = f"""🔄 *Обновлён продукт*
+📦 Название: {updated_product['name']}
+🆔 ID: {updated_product['id']}
+📝 Описание: {updated_product['description'][:150]}...
+💰 Цены:
+    Шмекели: {updated_product['prices'].get('shmeckles', 'N/A')}
+    Кредиты: {updated_product['prices'].get('credits', 'N/A')}
+    Флурбо: {updated_product['prices'].get('flurbos', 'N/A')}
+    """
+    if background_tasks is not None:
+        background_tasks.add_task(send_telegram_message, message)
     
     return updated_product
 
