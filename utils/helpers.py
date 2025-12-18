@@ -1,4 +1,4 @@
-from data import products
+from data.products import products
 
 def get_next_id() -> int:
     """
