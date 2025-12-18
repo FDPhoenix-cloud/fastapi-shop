@@ -1,8 +1,6 @@
 # Виртуальное окружение
 venv/
 .venv/
-ENV/
-env/
 
 # Python
 __pycache__/
@@ -40,3 +38,4 @@ Thumbs.db
 # Окружение
 .env
 .env.local
+.env.*.local
