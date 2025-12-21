@@ -18,10 +18,23 @@ class ProductCreate(BaseModel):
         description="Детальное описание товара",
         example="Устраняет любые засоры в пространственно-временном континууме"
     )
-    prices: Dict[str, float] = Field(
+    price_shmeckles: float = Field(
         ...,
-        description="Цены в разных валютах",
-        example={"shmeckles": 45.99, "credits": 33.5, "flurbos": 22.8}
+        gt=0,
+        description="Цена в шмекелях",
+        example=6.5,
+    )
+    price_flurbos: float = Field(
+        ...,
+        gt=0,
+        description="Цена в флурбо",
+        example=3.2,
+    )
+    price_credits: float = Field(
+        ...,
+        gt=0,
+        description="Цена в кредитах",
+        example=4.8,
     )
     image_url: str = Field(
         ...,

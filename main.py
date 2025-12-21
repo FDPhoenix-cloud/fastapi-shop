@@ -1,24 +1,33 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from typing import Dict
-
-# Импорты роутеров
+from core.config import settings
+from core.database import init_db
 from routes.products import router as products_router
 
-# Импорт конфигурации
-from config import settings
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Код старта и остановки приложения.
+    """
+    await init_db()
+    print("База данных инициализирована")
+    yield
+    print("Приложение остановлено")
 
-# Создаём экземпляр FastAPI
+
 app = FastAPI(
-    title="Ваше ФИО — Домашнее задание №33",
-    description="Рефакторенный REST API для интернет-магазина товаров из вселенной Рика и Морти",
-    version="2.0.0"
+    title="Прибытков Федор Сергеевич — ДЗ №35",
+    description="REST API магазина с БД (SQLAlchemy 2.0)",
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
-# ==================== Подключаем роутеры ====================
+
 app.include_router(products_router)
 
 
-# ==================== Корневой эндпоинт ====================
+
 @app.get("/")
 async def root() -> Dict[str, str]:
     """

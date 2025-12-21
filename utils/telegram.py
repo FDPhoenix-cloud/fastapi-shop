@@ -1,7 +1,6 @@
 import logging
 import telegram
-
-from config import settings
+from core.config import settings
 
 logging.basicConfig(level=logging.INFO)
 
