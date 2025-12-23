@@ -9,6 +9,10 @@ from core.database import AsyncSessionLocal
 from models.product import Product as ProductModel
 from utils.telegram import send_telegram_message
 
+from models.category import Category as CategoryModel
+from sqlalchemy.orm import selectinload
+
+
 
 # Создаём роутер для продуктов
 router = APIRouter(
@@ -37,7 +41,7 @@ async def get_all_products(
     ),
 ):
     async with AsyncSessionLocal() as session:  # type: AsyncSession
-        query = select(ProductModel)
+        query = select(ProductModel).options(selectinload(ProductModel.category))
 
         if search:
             like = f"%{search}%"
@@ -81,10 +85,17 @@ async def get_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
 ):
     async with AsyncSessionLocal() as session:
-        product = await session.get(ProductModel, product_id)
+        query = (
+            select(ProductModel)
+            .options(selectinload(ProductModel.category))
+            .where(ProductModel.id == product_id)
+        )
+        result = await session.execute(query)
+        product = result.scalars().first()
         if product is None:
             raise HTTPException(status_code=404, detail="Продукт не найден")
         return product
+
 
 
 
@@ -98,14 +109,33 @@ async def get_product(
 async def create_product(
     product_data: ProductCreate,
     background_tasks: BackgroundTasks,
-):
+) -> Product:
     async with AsyncSessionLocal() as session:
+        # 1. Проверяем категорию
+        category = await session.get(CategoryModel, product_data.category_id)
+        if category is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Категория не найдена",
+            )
+
+        # 2. Создаём продукт
         new_product = ProductModel(**product_data.model_dump())
         session.add(new_product)
         await session.commit()
-        await session.refresh(new_product)
 
-        message = f"""🆕 *Создан новый продукт*
+        # 3. Получаем продукт заново с жадной загрузкой category
+        query = (
+            select(ProductModel)
+            .options(selectinload(ProductModel.category))
+            .where(ProductModel.id == new_product.id)
+        )
+        result = await session.execute(query)
+        new_product = result.scalars().first()
+
+        # 4. Телеграм-уведомление
+        if background_tasks is not None and new_product is not None:
+            message = f"""🆕 *Создан новый продукт*
 
 📦 *Название:* {new_product.name}
 🆔 *ID:* {new_product.id}
@@ -115,10 +145,14 @@ async def create_product(
   • Шмекели: {new_product.price_shmeckles}
   • Флурбо: {new_product.price_flurbos}
   • Кредиты: {new_product.price_credits}
+
+🏷 *Категория:* {new_product.category.name}
 """
-        background_tasks.add_task(send_telegram_message, message)
+            background_tasks.add_task(send_telegram_message, message)
 
         return new_product
+
+
 
 
 
@@ -132,20 +166,41 @@ async def update_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
     product_data: ProductCreate = None,
     background_tasks: BackgroundTasks = None,
-):
+) -> Product:
     async with AsyncSessionLocal() as session:
         product = await session.get(ProductModel, product_id)
         if product is None:
             raise HTTPException(status_code=404, detail="Продукт не найден")
 
+        if product_data is None:
+            raise HTTPException(status_code=400, detail="Нет данных для обновления")
+
         data = product_data.model_dump()
+
+        # проверяем категорию, если передана
+        new_category_id = data.get("category_id")
+        if new_category_id is not None:
+            category = await session.get(CategoryModel, new_category_id)
+            if category is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Категория не найдена",
+                )
+
         for field, value in data.items():
             setattr(product, field, value)
 
         await session.commit()
-        await session.refresh(product)
 
-        if background_tasks is not None:
+        query = (
+            select(ProductModel)
+            .options(selectinload(ProductModel.category))
+            .where(ProductModel.id == product_id)
+        )
+        result = await session.execute(query)
+        product = result.scalars().first()
+
+        if background_tasks is not None and product is not None:
             message = f"""🔄 *Обновлён продукт*
 
 📦 *Название:* {product.name}
@@ -156,10 +211,14 @@ async def update_product(
   • Шмекели: {product.price_shmeckles}
   • Флурбо: {product.price_flurbos}
   • Кредиты: {product.price_credits}
+
+🏷 *Категория:* {product.category.name}
 """
             background_tasks.add_task(send_telegram_message, message)
 
         return product
+
+
 
 
 

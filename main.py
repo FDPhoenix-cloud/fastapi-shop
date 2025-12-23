@@ -4,6 +4,8 @@ from typing import Dict
 from core.config import settings
 from core.database import init_db
 from routes.products import router as products_router
+from routes.categories import router as categories_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +27,7 @@ app = FastAPI(
 
 
 app.include_router(products_router)
+app.include_router(categories_router)
 
 
 

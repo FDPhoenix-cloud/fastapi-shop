@@ -41,3 +41,9 @@ class ProductCreate(BaseModel):
         description="Путь к изображению товара",
         example="/images/rick-plunger.webp"
     )
+    category_id: int = Field(
+        ...,
+        ge=1,
+        description="ID категории, к которой относится товар",
+        example=1,
+    )

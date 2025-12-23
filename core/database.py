@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from core.config import settings
 from models.base import Base
 from models.product import Product  # noqa: F401
+from models.category import Category
 
 # URL подключения к БД
 DATABASE_URL = settings.database_url
