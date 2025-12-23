@@ -2,6 +2,12 @@
 venv/
 .venv/
 
+
+test.db
+*.db
+scripts/
+utils/
+
 # Python
 __pycache__/
 *.py[cod]
