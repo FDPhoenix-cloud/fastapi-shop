@@ -1,23 +1,33 @@
-from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks
 from typing import List, Optional
 
-from sqlalchemy import select, or_
+import logging
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Depends,
+    Path,
+    Query,
+    BackgroundTasks,
+    UploadFile,
+)
+from sqlalchemy import select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from schemas import Product, ProductCreate
-from core.database import AsyncSessionLocal
-from models.product import Product as ProductModel
-from utils.telegram import send_telegram_message
-
-from models.category import Category as CategoryModel
 from sqlalchemy.orm import selectinload
 
+from schemas import Product, ProductCreate
+from core.database import AsyncSessionLocal, get_db_session
+from core.storage import save_product_image, delete_product_image
+from models.product import Product as ProductModel
+from models.category import Category as CategoryModel
+from utils.telegram import send_telegram_message
+from utils.products import product_get_by_id  # должна быть функция, см. ниже
 
+logger = logging.getLogger(__name__)
 
 # Создаём роутер для продуктов
 router = APIRouter(
     prefix="/products",
-    tags=["Products"]
+    tags=["Products"],
 )
 
 # ==================== GET /products/ ====================
@@ -71,7 +81,9 @@ async def get_all_products(
 
         result = await session.execute(query)
         products = result.scalars().all()
+        print("DEBUG products in handler:", len(products))
         return products
+
 
 
 
@@ -83,7 +95,7 @@ async def get_all_products(
 )
 async def get_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
-):
+) -> Product:
     async with AsyncSessionLocal() as session:
         query = (
             select(ProductModel)
@@ -95,8 +107,6 @@ async def get_product(
         if product is None:
             raise HTTPException(status_code=404, detail="Продукт не найден")
         return product
-
-
 
 
 # ==================== POST /products/ ====================
@@ -142,9 +152,9 @@ async def create_product(
 📝 *Описание:* {new_product.description[:150]}...
 
 💰 *Цены:*
-  • Шмекели: {new_product.price_shmeckles}
-  • Флурбо: {new_product.price_flurbos}
-  • Кредиты: {new_product.price_credits}
+ • Шмекели: {new_product.price_shmeckles}
+ • Флурбо: {new_product.price_flurbos}
+ • Кредиты: {new_product.price_credits}
 
 🏷 *Категория:* {new_product.category.name}
 """
@@ -153,10 +163,10 @@ async def create_product(
         return new_product
 
 
-
-
-
 # ==================== PUT /products/{product_id} ====================
+from typing import Optional
+# ...
+
 @router.put(
     "/{product_id}",
     response_model=Product,
@@ -164,7 +174,7 @@ async def create_product(
 )
 async def update_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
-    product_data: ProductCreate = None,
+    product_data: Optional[ProductCreate] = None,
     background_tasks: BackgroundTasks = None,
 ) -> Product:
     async with AsyncSessionLocal() as session:
@@ -177,7 +187,6 @@ async def update_product(
 
         data = product_data.model_dump()
 
-        # проверяем категорию, если передана
         new_category_id = data.get("category_id")
         if new_category_id is not None:
             category = await session.get(CategoryModel, new_category_id)
@@ -208,17 +217,15 @@ async def update_product(
 📝 *Описание:* {product.description[:150]}...
 
 💰 *Цены:*
-  • Шмекели: {product.price_shmeckles}
-  • Флурбо: {product.price_flurbos}
-  • Кредиты: {product.price_credits}
+ • Шмекели: {product.price_shmeckles}
+ • Флурбо: {product.price_flurbos}
+ • Кредиты: {product.price_credits}
 
 🏷 *Категория:* {product.category.name}
 """
             background_tasks.add_task(send_telegram_message, message)
 
         return product
-
-
 
 
 
@@ -230,7 +237,7 @@ async def update_product(
 )
 async def delete_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
-):
+) -> None:
     async with AsyncSessionLocal() as session:
         product = await session.get(ProductModel, product_id)
         if product is None:
@@ -240,3 +247,103 @@ async def delete_product(
         await session.commit()
         return None
 
+
+# ==================== POST /products/{product_id}/upload-image ====================
+@router.post(
+    "/{product_id}/upload-image",
+    summary="Загрузить изображение для товара",
+)
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Загружает изображение для товара и привязывает его.
+    Если старое изображение было — оно удаляется.
+    """
+    logger.info(f"📥 Запрос на загрузку изображения для товара ID={product_id}")
+
+    # 1. Проверяем, что товар существует
+    product = await product_get_by_id(session, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+
+    # 2. Удаляем старое изображение, если есть
+    if product.image_url:
+        logger.info(f"🗑️ Удаление старого изображения: {product.image_url}")
+        delete_product_image(product.image_url)
+
+    # 3. Сохраняем новое изображение
+    try:
+        image_url = await save_product_image(file)
+    except HTTPException:
+        # save_product_image уже залогировал и вернул корректный статус
+        raise
+
+    # 4. Обновляем БД
+    try:
+        stmt = (
+            update(ProductModel)
+            .where(ProductModel.id == product_id)
+            .values(image_url=image_url)
+        )
+        await session.execute(stmt)
+        await session.commit()
+    except Exception as e:
+        logger.exception(f"🔥 Ошибка обновления image_url в БД: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось обновить изображение товара",
+        )
+
+    logger.info(f"✅ Изображение товара {product_id} обновлено: {image_url}")
+    return {"product_id": product_id, "image_url": image_url}
+
+
+# ==================== DELETE /products/{product_id}/image ====================
+@router.delete(
+    "/{product_id}/image",
+    summary="Удалить изображение товара",
+)
+async def delete_product_image_endpoint(
+    product_id: int,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Удаляет изображение товара (с диска и из БД).
+    """
+    logger.info(f"🗑️ Запрос на удаление изображения товара ID={product_id}")
+
+    product = await product_get_by_id(session, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+
+    if not product.image_url:
+        raise HTTPException(status_code=400, detail="У товара нет изображения")
+
+    # Удаляем файл с диска
+    deleted = delete_product_image(product.image_url)
+    if not deleted:
+        logger.warning(
+            f"⚠️ Файл для товара {product_id} не найден на диске: {product.image_url}"
+        )
+
+    # Обнуляем image_url в БД
+    try:
+        stmt = (
+            update(ProductModel)
+            .where(ProductModel.id == product_id)
+            .values(image_url=None)
+        )
+        await session.execute(stmt)
+        await session.commit()
+    except Exception as e:
+        logger.exception(f"🔥 Ошибка очистки image_url в БД: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось обновить товар после удаления изображения",
+        )
+
+    logger.info(f"✅ Изображение товара {product_id} удалено")
+    return {"message": "Изображение удалено", "product_id": product_id}

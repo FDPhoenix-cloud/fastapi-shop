@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import String, Float, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,9 +24,9 @@ class Product(Base):
         String(500),
         nullable=False,
     )
-    image_url: Mapped[str] = mapped_column(
-        String(200),
-        nullable=False,
+    image_url: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
     )
     price_shmeckles: Mapped[float] = mapped_column(
         Float,

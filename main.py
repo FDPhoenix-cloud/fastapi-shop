@@ -1,3 +1,5 @@
+import logging
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from typing import Dict
@@ -6,13 +8,13 @@ from core.database import init_db
 from routes.products import router as products_router
 from routes.categories import router as categories_router
 
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Код старта и остановки приложения.
     """
-    await init_db()
     print("База данных инициализирована")
     yield
     print("Приложение остановлено")
@@ -28,6 +30,14 @@ app = FastAPI(
 
 app.include_router(products_router)
 app.include_router(categories_router)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory="uploads"),
+    name="uploads",
+)
+
+logger.info("✅ Статические файлы (uploads) подключены")
 
 
 

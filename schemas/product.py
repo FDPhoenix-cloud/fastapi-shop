@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Dict
+from typing import Optional
+
+from pydantic import BaseModel, Field, ConfigDict
+
 from schemas.category import CategoryRead
-from pydantic import ConfigDict
 
 
 class Product(BaseModel):
@@ -19,10 +20,10 @@ class Product(BaseModel):
         example="Каждый дом должен иметь плюмбус...",
     )
 
-    image_url: str = Field(
-        ...,
+    image_url: Optional[str] = Field(
+        None,
         description="Путь к изображению товара",
-        example="/images/plumbus.webp",
+        example="/uploads/products/plumbus.webp",
     )
 
     price_shmeckles: float = Field(
@@ -42,7 +43,7 @@ class Product(BaseModel):
         description="Цена в кредитах",
         example=4.8,
     )
+
     category: CategoryRead
 
     model_config = ConfigDict(from_attributes=True)
-

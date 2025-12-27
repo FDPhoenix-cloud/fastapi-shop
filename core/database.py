@@ -1,8 +1,15 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    async_sessionmaker,
+    AsyncSession,
+)
+
 from core.config import settings
 from models.base import Base
 from models.product import Product  # noqa: F401
-from models.category import Category
+from models.category import Category  # noqa: F401
 
 # URL подключения к БД
 DATABASE_URL = settings.database_url
@@ -21,3 +28,12 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Зависимость FastAPI для работы с БД.
+    Используется как: session: AsyncSession = Depends(get_db_session)
+    """
+    async with AsyncSessionLocal() as session:
+        yield session
