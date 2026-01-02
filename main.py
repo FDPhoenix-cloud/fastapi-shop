@@ -1,4 +1,5 @@
 import logging
+from auth import auth_router
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from core.config import settings
 from core.database import init_db
 from routes.products import router as products_router
 from routes.categories import router as categories_router
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ app = FastAPI(
 
 app.include_router(products_router)
 app.include_router(categories_router)
+app.include_router(auth_router)
 
 app.mount(
     "/uploads",

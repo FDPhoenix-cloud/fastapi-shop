@@ -28,6 +28,12 @@ class Settings(BaseSettings):
         alias="TELEGRAM_USER_ID",
     )
 
+    secret_key: str = Field(
+        ...,
+        alias="SECRET_KEY",
+        description="SECRET_KEY для JWT аутентификации",
+    )
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
