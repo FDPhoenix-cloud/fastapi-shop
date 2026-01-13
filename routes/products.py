@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from schemas import Product, ProductCreate
-from core.database import AsyncSessionLocal, get_db_session
+from core.database import AsyncSessionLocal, get_async_session
 from core.storage import save_product_image, delete_product_image
 from models.product import Product as ProductModel
 from models.category import Category as CategoryModel
@@ -256,7 +256,7 @@ async def delete_product(
 async def upload_product_image(
     product_id: int,
     file: UploadFile,
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Загружает изображение для товара и привязывает его.
@@ -308,7 +308,7 @@ async def upload_product_image(
 )
 async def delete_product_image_endpoint(
     product_id: int,
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Удаляет изображение товара (с диска и из БД).

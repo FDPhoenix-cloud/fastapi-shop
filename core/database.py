@@ -30,10 +30,6 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Зависимость FastAPI для работы с БД.
-    Используется как: session: AsyncSession = Depends(get_db_session)
-    """
+async def get_async_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         yield session

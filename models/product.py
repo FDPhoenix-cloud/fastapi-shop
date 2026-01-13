@@ -47,6 +47,11 @@ class Product(Base):
     category: Mapped["Category"] = relationship(
         back_populates="products",
     )
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="10",
+    )
 
     def __repr__(self) -> str:
         return f"<Product id={self.id} name={self.name!r}>"

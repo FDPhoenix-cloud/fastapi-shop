@@ -8,6 +8,8 @@ from core.config import settings
 from core.database import init_db
 from routes.products import router as products_router
 from routes.categories import router as categories_router
+from routes.cart import router as cart_router
+from routes.orders import router as orders_router
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,8 @@ app = FastAPI(
 app.include_router(products_router)
 app.include_router(categories_router)
 app.include_router(auth_router)
+app.include_router(cart_router, prefix="/cart", tags=["Cart"])     
+app.include_router(orders_router, prefix="/orders", tags=["Orders"])
 
 app.mount(
     "/uploads",
