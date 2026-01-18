@@ -1,75 +1,82 @@
 import logging
-from auth import auth_router
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict
+from pathlib import Path
+
+from core.database import engine, Base
 from core.config import settings
-from core.database import init_db
 from routes.products import router as products_router
 from routes.categories import router as categories_router
 from routes.cart import router as cart_router
 from routes.orders import router as orders_router
-
+from auth import auth_router
 
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Код старта и остановки приложения.
-    """
-    print("База данных инициализирована")
+    """Инициализация и завершение приложения"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("✅ Все таблицы созданы!")
     yield
-    print("Приложение остановлено")
+    logger.info("🛑 Приложение остановлено")
 
 
 app = FastAPI(
-    title="Прибытков Федор Сергеевич — ДЗ №35",
-    description="REST API магазина с БД (SQLAlchemy 2.0)",
+    title="API Магазина - ДЗ №42",
+    description="FastAPI + SQLAlchemy интернет-магазин",
     version="1.0.0",
     lifespan=lifespan,
 )
 
-
-app.include_router(products_router)
-app.include_router(categories_router)
-app.include_router(auth_router)
-app.include_router(cart_router, prefix="/cart", tags=["Cart"])     
-app.include_router(orders_router, prefix="/orders", tags=["Orders"])
-
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads",
+# ✅ CORS CONFIGURATION - ИСПРАВЛЕНО!
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
 )
 
-logger.info("✅ Статические файлы (uploads) подключены")
+# Подключаем роутеры
+app.include_router(products_router, prefix="/api")
+app.include_router(categories_router, prefix="/api")
+app.include_router(cart_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
+app.include_router(auth_router)
 
+images_dir = Path("images")
+if images_dir.exists():
+    app.mount("/images", StaticFiles(directory="images"), name="images")
+
+# Статические файлы
+try:
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+    logger.info("✅ Статические файлы подключены")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось подключить статические файлы: {e}")
 
 
 @app.get("/")
 async def root() -> Dict[str, str]:
-    """
-    Корневой эндпоинт с информацией о приложении.
-    
-    Демонстрирует работу конфигурации и переменных окружения.
-    
-    Returns:
-        Dict с информацией о приложении
-    """
-    # Маскируем ключ API (показываем только первые 10 символов)
-    masked_key = settings.tg_bot_key[:10] + "..." if len(settings.tg_bot_key) > 10 else settings.tg_bot_key
-    
+    """Корневой эндпоинт"""
     return {
-        "message": "Добро пожаловать в API магазина из вселенной Рика и Морти!",
-        "version": "2.0.0 (Рефакторенная версия)",
-        "bot_key_sample": masked_key,
-        "docs_url": "/docs"
+        "message": "🚀 Добро пожаловать в API магазина!",
+        "docs": "/docs",
+        "version": "1.0.0"
     }
 
 
-# ==================== Запуск приложения ====================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

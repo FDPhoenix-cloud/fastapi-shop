@@ -1,11 +1,9 @@
 from typing import Optional, List
-
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
-
+from core.database import Base
 
 class User(SQLAlchemyBaseUserTable[int], Base):
     """
@@ -30,12 +28,6 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         String(100),
         nullable=True,
     )
-    cart: Mapped["Cart"] = relationship(
-        "Cart",
-        back_populates="user",
-        uselist=False,
-    )
-    orders: Mapped[List["Order"]] = relationship(
-        "Order",
-        back_populates="user",
-    )
+    
+    carts: Mapped[List["Cart"]] = relationship("Cart", back_populates="user")
+    orders: Mapped[List["Order"]] = relationship("Order", back_populates="user")

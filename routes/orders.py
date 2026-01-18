@@ -20,9 +20,6 @@ async def create_order(
     user=Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    # ... вся логика транзакции как раньше ...
-    
-    # уведомление (в самом конце)
     background_tasks.add_task(
         send_telegram_message,
         f"🆕 Новый заказ #{order.id}\n"

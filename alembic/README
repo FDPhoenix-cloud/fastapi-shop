@@ -1,1 +1,36 @@
-Generic single-database configuration.
+project/
+├── alembic/ # Миграции базы данных
+│ ├── versions/
+│ ├── env.py
+│ ├── script.py.mako
+│ └── alembic.ini
+├── models/ # SQLAlchemy модели
+│ ├── init.py
+│ ├── base.py
+│ ├── user.py
+│ ├── product.py
+│ ├── category.py
+│ └── commerce.py # Cart, CartItem, Order, OrderItem
+├── schemas/ # Pydantic схемы валидации
+│ ├── init.py
+│ ├── user.py
+│ ├── product.py
+│ ├── category.py
+│ ├── product_create.py
+│ └── commerce.py
+├── services/ # Бизнес-логика и работа с БД
+│ ├── init.py
+│ ├── product_service.py
+│ ├── cart_service.py
+│ └── order_service.py
+├── routes/ # API эндпоинты
+│ ├── init.py
+│ ├── products.py
+│ ├── categories.py
+│ ├── cart.py
+│ └── orders.py
+├── dependencies/ # Кастомные зависимости FastAPI
+│ ├── init.py
+│ ├── database.py # get_async_session
+│ └── auth.py # get_current_user
+├── core/

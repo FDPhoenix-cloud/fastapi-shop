@@ -9,18 +9,30 @@ from fastapi import (
     Query,
     BackgroundTasks,
     UploadFile,
+    Body,
 )
-from sqlalchemy import select, or_, update
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy import update  
+from sqlalchemy.orm import selectinload  
+
 
 from schemas import Product, ProductCreate
-from core.database import AsyncSessionLocal, get_async_session
+from core.database import get_async_session
 from core.storage import save_product_image, delete_product_image
 from models.product import Product as ProductModel
-from models.category import Category as CategoryModel
+
 from utils.telegram import send_telegram_message
-from utils.products import product_get_by_id  # должна быть функция, см. ниже
+from utils.products import product_get_by_id
+
+from services.product_service import (
+    get_all_products_service,
+    get_product_by_id_service,
+    create_product_service,
+    update_product_service,
+    delete_product_service,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,40 +61,20 @@ async def get_all_products(
         None,
         description="Направление сортировки (asc или desc)",
     ),
+    session: AsyncSession = Depends(get_async_session),
 ):
-    async with AsyncSessionLocal() as session:  # type: AsyncSession
-        query = select(ProductModel).options(selectinload(ProductModel.category))
+    try:
+        products = await get_all_products_service(
+            session=session,
+            search=search,
+            currency=currency,
+            sort_order=sort_order,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        if search:
-            like = f"%{search}%"
-            query = query.where(
-                or_(
-                    ProductModel.name.ilike(like),
-                    ProductModel.description.ilike(like),
-                )
-            )
+    return products
 
-        if currency and sort_order:
-            if currency not in ("shmeckles", "flurbos", "credits"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="currency должен быть shmeckles, flurbos или credits",
-                )
-            if sort_order not in ("asc", "desc"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="sort_order должен быть asc или desc",
-                )
-
-            column = getattr(ProductModel, f"price_{currency}")
-            if sort_order == "desc":
-                column = column.desc()
-            query = query.order_by(column)
-
-        result = await session.execute(query)
-        products = result.scalars().all()
-        print("DEBUG products in handler:", len(products))
-        return products
 
 
 
@@ -95,18 +87,12 @@ async def get_all_products(
 )
 async def get_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
+    session: AsyncSession = Depends(get_async_session),
 ) -> Product:
-    async with AsyncSessionLocal() as session:
-        query = (
-            select(ProductModel)
-            .options(selectinload(ProductModel.category))
-            .where(ProductModel.id == product_id)
-        )
-        result = await session.execute(query)
-        product = result.scalars().first()
-        if product is None:
-            raise HTTPException(status_code=404, detail="Продукт не найден")
-        return product
+    product = await get_product_by_id_service(session, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    return product
 
 
 # ==================== POST /products/ ====================
@@ -119,33 +105,17 @@ async def get_product(
 async def create_product(
     product_data: ProductCreate,
     background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_async_session),
 ) -> Product:
-    async with AsyncSessionLocal() as session:
-        # 1. Проверяем категорию
-        category = await session.get(CategoryModel, product_data.category_id)
-        if category is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Категория не найдена",
-            )
+    try:
+        new_product = await create_product_service(session, product_data)
+    except ValueError as e:
+        # сейчас единственный вариант — "Категория не найдена"
+        raise HTTPException(status_code=404, detail=str(e))
 
-        # 2. Создаём продукт
-        new_product = ProductModel(**product_data.model_dump())
-        session.add(new_product)
-        await session.commit()
-
-        # 3. Получаем продукт заново с жадной загрузкой category
-        query = (
-            select(ProductModel)
-            .options(selectinload(ProductModel.category))
-            .where(ProductModel.id == new_product.id)
-        )
-        result = await session.execute(query)
-        new_product = result.scalars().first()
-
-        # 4. Телеграм-уведомление
-        if background_tasks is not None and new_product is not None:
-            message = f"""🆕 *Создан новый продукт*
+    # уведомление в TG оставляешь как у тебя было
+    if background_tasks is not None and new_product is not None:
+        message = f"""🆕 *Создан новый продукт*
 
 📦 *Название:* {new_product.name}
 🆔 *ID:* {new_product.id}
@@ -158,59 +128,36 @@ async def create_product(
 
 🏷 *Категория:* {new_product.category.name}
 """
-            background_tasks.add_task(send_telegram_message, message)
+        background_tasks.add_task(send_telegram_message, message)
 
-        return new_product
+    return new_product
+
 
 
 # ==================== PUT /products/{product_id} ====================
-from typing import Optional
-# ...
-
 @router.put(
     "/{product_id}",
     response_model=Product,
     summary="Обновить продукт",
 )
 async def update_product(
-    product_id: int = Path(..., ge=1, description="ID продукта"),
-    product_data: Optional[ProductCreate] = None,
+    product_id: int = Path(..., ge=1),
+    product_data: ProductCreate = Body(..., description="Данные для обновления"),
     background_tasks: BackgroundTasks = None,
+    session: AsyncSession = Depends(get_async_session),
 ) -> Product:
-    async with AsyncSessionLocal() as session:
-        product = await session.get(ProductModel, product_id)
-        if product is None:
-            raise HTTPException(status_code=404, detail="Продукт не найден")
+    if product_data is None:
+        raise HTTPException(status_code=400, detail="Нет данных для обновления")
 
-        if product_data is None:
-            raise HTTPException(status_code=400, detail="Нет данных для обновления")
+    try:
+        product = await update_product_service(session, product_id, product_data)
+    except ValueError as e:
+        msg = str(e)
+        status_code = 404 if "не найден" in msg or "Категория" in msg else 400
+        raise HTTPException(status_code=status_code, detail=msg)
 
-        data = product_data.model_dump()
-
-        new_category_id = data.get("category_id")
-        if new_category_id is not None:
-            category = await session.get(CategoryModel, new_category_id)
-            if category is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Категория не найдена",
-                )
-
-        for field, value in data.items():
-            setattr(product, field, value)
-
-        await session.commit()
-
-        query = (
-            select(ProductModel)
-            .options(selectinload(ProductModel.category))
-            .where(ProductModel.id == product_id)
-        )
-        result = await session.execute(query)
-        product = result.scalars().first()
-
-        if background_tasks is not None and product is not None:
-            message = f"""🔄 *Обновлён продукт*
+    if background_tasks is not None and product is not None:
+        message = f"""🔄 *Обновлён продукт*
 
 📦 *Название:* {product.name}
 🆔 *ID:* {product.id}
@@ -223,9 +170,10 @@ async def update_product(
 
 🏷 *Категория:* {product.category.name}
 """
-            background_tasks.add_task(send_telegram_message, message)
+        background_tasks.add_task(send_telegram_message, message)
 
-        return product
+    return product
+
 
 
 
@@ -237,15 +185,14 @@ async def update_product(
 )
 async def delete_product(
     product_id: int = Path(..., ge=1, description="ID продукта"),
+    session: AsyncSession = Depends(get_async_session),
 ) -> None:
-    async with AsyncSessionLocal() as session:
-        product = await session.get(ProductModel, product_id)
-        if product is None:
-            raise HTTPException(status_code=404, detail="Продукт не найден")
+    try:
+        await delete_product_service(session, product_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return None
 
-        await session.delete(product)
-        await session.commit()
-        return None
 
 
 # ==================== POST /products/{product_id}/upload-image ====================

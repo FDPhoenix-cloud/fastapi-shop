@@ -1,26 +1,15 @@
 from typing import List
-
-from sqlalchemy import String
+from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
-
+from core.database import Base
 
 class Category(Base):
-    """
-    Категория товара.
-    Одна категория может содержать много продуктов.
-    """
+    """Категория товаров"""
     __tablename__ = "categories"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        unique=True,
-    )
-
-    # Обратная связь: список продуктов в этой категории
-    products: Mapped[List["Product"]] = relationship(
-        back_populates="category",
-    )
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    
+    products: Mapped[List["Product"]] = relationship("Product", back_populates="category")

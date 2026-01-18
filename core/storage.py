@@ -1,74 +1,81 @@
-import logging
+import os
 import uuid
+import logging
 from pathlib import Path
-
 from fastapi import UploadFile, HTTPException
 
 logger = logging.getLogger(__name__)
 
-# uploads/products относительно корня проекта
-UPLOAD_DIR = Path("uploads") / "products"
+UPLOAD_DIR = Path("uploads/products")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 МБ
-
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 async def save_product_image(file: UploadFile) -> str:
     """
-    Сохраняет файл изображения товара на диск, возвращает URL (/uploads/products/xxx.ext).
+    Сохраняет изображение товара и возвращает путь.
     """
-    logger.info(f"📥 Начало загрузки файла: {file.filename}")
-
-    ext = Path(file.filename).suffix.lower()
+    
+    # Проверка имени файла
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Имя файла отсутствует")
+    
+    # Проверка расширения
+    ext = file.filename.split(".")[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
-        logger.error(f"❌ Недопустимый формат файла: {ext}")
         raise HTTPException(
             status_code=400,
-            detail=f"Разрешены только: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            detail=f"Расширение .{ext} не поддерживается. Допустимые: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-
+    
+    # Читаем содержимое
     content = await file.read()
+    
+    # Проверка размера
     if len(content) > MAX_FILE_SIZE:
-        logger.error(f"❌ Файл слишком большой: {len(content)} байт")
         raise HTTPException(
-            status_code=400,
-            detail="Максимальный размер файла — 5 МБ",
+            status_code=413,
+            detail=f"Файл слишком большой (макс {MAX_FILE_SIZE // 1024 // 1024}MB)"
         )
-
-    filename = f"{uuid.uuid4()}{ext}"
-    filepath = UPLOAD_DIR / filename
-
+    
+    # Генерируем уникальное имя
+    unique_id = uuid.uuid4().hex
+    new_filename = f"{unique_id}.{ext}"
+    file_path = UPLOAD_DIR / new_filename
+    
+    # Сохраняем файл
     try:
-        with filepath.open("wb") as f:
+        with open(file_path, "wb") as f:
             f.write(content)
+        logger.info(f"✅ Изображение сохранено: {new_filename}")
     except Exception as e:
-        logger.exception(f"🔥 Ошибка сохранения файла {filepath}: {e}")
+        logger.exception(f"❌ Ошибка при сохранении файла: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Не удалось сохранить файл",
+            detail="Не удалось сохранить изображение"
         )
-
-    logger.info(f"✅ Файл сохранён: {filepath}")
-    return f"/uploads/products/{filename}"
-
+    
+    return f"/uploads/products/{new_filename}"
 
 def delete_product_image(image_url: str) -> bool:
     """
-    Удаляет файл изображения по URL (/uploads/products/xxx.ext).
-    Возвращает True, если файл удалён, False — если его не было или произошла ошибка.
+    Удаляет изображение товара с диска.
+    Возвращает True если файл был удалён.
     """
-    try:
-        filename = Path(image_url).name
-        filepath = UPLOAD_DIR / filename
-
-        if filepath.exists():
-            filepath.unlink()
-            logger.info(f"🗑️ Файл удалён: {filepath}")
-            return True
-        else:
-            logger.warning(f"⚠️ Файл для удаления не найден: {filepath}")
-            return False
-    except Exception as e:
-        logger.exception(f"🔥 Ошибка при удалении файла {image_url}: {e}")
+    if not image_url:
         return False
+    
+    # Извлекаем имя файла из URL
+    filename = image_url.split("/")[-1]
+    file_path = UPLOAD_DIR / filename
+    
+    try:
+        if file_path.exists():
+            file_path.unlink()
+            logger.info(f"✅ Изображение удалено: {filename}")
+            return True
+    except Exception as e:
+        logger.exception(f"❌ Ошибка при удалении файла: {e}")
+    
+    return False
